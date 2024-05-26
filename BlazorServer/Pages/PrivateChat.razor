@@ -1,0 +1,67 @@
+﻿@page "/privatechat/{selectedUserId}/{selectedConnectionId}"
+@using Microsoft.AspNetCore.SignalR.Client
+@inject NavigationManager NavManager
+@implements IAsyncDisposable
+
+<h3>Chat with @selectedUserId</h3>
+
+<div class="form-group">
+    <label for="messageInput">Message:</label>
+    <input id="messageInput" @bind="messageInput" class="form-control" />
+</div>
+<br />
+
+<button class="btn btn-primary" @onclick="SendPrivate" disabled="@(IsConnected == false)">Send</button>
+
+<br />
+<ul>
+    @foreach (string message in messages)
+    {
+        <li>@message</li>
+    }
+</ul>
+
+@code {
+    [Parameter] public string selectedUserId { get; set; }
+    [Parameter] public string selectedConnectionId { get; set; }
+
+    private HubConnection? hubConnection;
+    private List<string> messages = new();
+    private string? messageInput;
+
+    protected override async Task OnInitializedAsync()
+    {
+        hubConnection = new HubConnectionBuilder()
+            .WithUrl(NavManager.ToAbsoluteUri("/chathub"))
+            .WithAutomaticReconnect()
+            .Build();
+
+        hubConnection.On<string, string>("BBBB", (user, message) =>
+        {
+            var formattedMessage = $"{user}: {message}";
+            messages.Add(formattedMessage);
+            StateHasChanged();
+        });
+
+        await hubConnection.StartAsync();
+    }
+
+    private async Task SendPrivate()
+    {
+        if (hubConnection is not null)
+        {
+            await hubConnection.SendAsync("SendMessagePrivate_ChatHubFunction", selectedConnectionId, selectedUserId, messageInput);
+            messageInput = string.Empty; // Clear the input after sending
+        }
+    }
+
+    public bool IsConnected => hubConnection?.State == HubConnectionState.Connected;
+
+    public async ValueTask DisposeAsync()
+    {
+        if (hubConnection is not null)
+        {
+            await hubConnection.DisposeAsync();
+        }
+    }
+}
