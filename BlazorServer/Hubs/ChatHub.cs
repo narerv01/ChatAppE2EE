@@ -16,30 +16,34 @@ namespace BlazorServer.Hubs
             _userConnectionManager = userConnectionManager;
         }
 
-        public Task SendMessagePrivate_ChatHubFunction(string connectionId, string user, string message)
+        public Task SendMessagePrivate_ChatHubFunction(string connectionId, string user, byte[] secretMessage, byte[] IV)
         {
-            return Clients.Client(connectionId).SendAsync("BBBB", user, message);
+            return Clients.Client(connectionId).SendAsync("BBBB", user, secretMessage, IV);
         }
 
 
-        public Task SendPublicKey(string publicKey)
+        public Task SendPublicKey(byte[] publicKey)
         {
             // Store the public key associated with the connectionId
-            _userConnectionManager.userConnections[Context.ConnectionId] = publicKey;
+            _userConnectionManager.userPublicKeys[Context.ConnectionId] = publicKey;
             return Task.CompletedTask;
         }
+
+ 
+
         public Task RequestPublicKey(string connectionId)
         {
             // Send the public key associated with the connectionId
-            if (_userConnectionManager.userConnections.TryGetValue(connectionId, out var publicKey))
+            if (_userConnectionManager.userPublicKeys.TryGetValue(connectionId, out var PublicKey))
             {
-                return Clients.Caller.SendAsync("ReceivePublicKey", publicKey);
+                return Clients.Caller.SendAsync("RequestPublicKey", PublicKey);
             }
             else
             {
                 return Task.CompletedTask;
             }
         }
+ 
         // Method to send the list of connected users to the caller
         public Task SendConnectedUsers_ChatHubFunction()
         {
@@ -66,6 +70,7 @@ namespace BlazorServer.Hubs
             lock (_userConnectionManager.userConnections)
             {
                 _userConnectionManager.userConnections.Remove(connectionId);
+                _userConnectionManager.userPublicKeys.Remove(connectionId);
             }
 
             await Clients.All.SendAsync("CCCC", _userConnectionManager.userConnections);

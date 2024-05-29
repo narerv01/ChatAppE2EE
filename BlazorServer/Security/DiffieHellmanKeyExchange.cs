@@ -48,6 +48,9 @@ public class DiffieHellmanKeyExchange : IDisposable
 
         this.aes.Key = derivedKey;
 
+        // Generate a new IV for each encryption operation
+        this.aes.GenerateIV();
+
         using (var cipherText = new MemoryStream())
         {
             using (var encryptor = this.aes.CreateEncryptor())

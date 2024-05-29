@@ -28,6 +28,19 @@
 
 <div class="form-group">
     <h4>You are: @currentUsername</h4>
+    <h4>You chat with: @selectedUserId</h4>
+    <br />
+    @if (diffieHellmanKeyExchange.PublicKey != null)
+    {
+        <h4>My public key @Convert.ToBase64String(diffieHellmanKeyExchange.PublicKey)</h4>
+        <h4>My IV @Convert.ToBase64String(diffieHellmanKeyExchange.IV)</h4>
+    }
+    <br />
+    @if (otherPublicKey != null && otherIV != null)
+    {
+        <h4>Other public key: @Convert.ToBase64String(@otherPublicKey)</h4>
+        <h4>Other IV: @Convert.ToBase64String(@otherIV)</h4>
+    }
 </div>
 <br />
 
@@ -38,41 +51,118 @@
 
 @foreach (var userWithId in connectedUsers)
 {
-    <div @onclick="() => HandleSelection(userWithId.Value, userWithId.Key)" class="user-container">
-        <label class="user-item">@userWithId.Value</label>
-    </div>
+    @if(userWithId.Value != currentUsername)
+    {   
+        <div @onclick="() => HandleSelection(userWithId.Value, userWithId.Key)" class="user-container">
+            <label class="user-item">@userWithId.Value</label>
+        </div>
+    }
 }
+
+<div class="form-group">
+    <label for="messageInput">Message:</label>
+    <input id="messageInput" @bind="messageInput" class="form-control" />
+</div>
+<br />
+
+<button class="btn btn-primary" @onclick="SendPrivate" disabled="@(IsConnected == false)">Send</button>
+
+<br />
+<ul>
+    @foreach (string message in messages)
+    {
+        <li>@message</li>
+    }
+</ul>
+
 
 @code {
     private HubConnection? hubConnection;
+
+    // messages
+    private List<string> messages = new();
+    private string? messageInput;
+
+    // users
     private Dictionary<string, string> connectedUsers = new();
-    private string currentUsername;
+    private string currentUsername; 
+    private string selectedConnectionId;
+    private string selectedUserId;
+
+    // encryption
+    private DiffieHellmanKeyExchange diffieHellmanKeyExchange;
+    private byte[] otherPublicKey;
+    private byte[] otherIV;
 
     protected override async Task OnInitializedAsync()
     {
+        diffieHellmanKeyExchange = new DiffieHellmanKeyExchange();
+
         hubConnection = new HubConnectionBuilder()
             .WithUrl(NavManager.ToAbsoluteUri("/chathub"))
             .WithAutomaticReconnect()
             .Build();
 
-        hubConnection.On<Dictionary<string, string>>("CCCC", users =>
+        hubConnection.On<Dictionary<string, string>>("CCCC", async users =>
         {
             connectedUsers = users;
-            StateHasChanged();
+            await InvokeAsync(StateHasChanged);
         });
 
-        hubConnection.On<string>("ReceiveUsername", username =>
+        hubConnection.On<string>("ReceiveUsername", async username =>
         {
-            currentUsername = username;
-            StateHasChanged();
+            currentUsername = username; 
+            await InvokeAsync(StateHasChanged);
         });
 
-        await hubConnection.StartAsync();
+        hubConnection.On<string, byte[], byte[]>("BBBB", async (user, secretMessage, IV) =>
+        {
+            otherIV = IV; 
+
+            var RawMessage = $"{user}: RAW message: {Convert.ToBase64String(secretMessage)}";
+            messages.Add(RawMessage);
+
+            var decryptedMessage = diffieHellmanKeyExchange.Decrypt(otherPublicKey, secretMessage, IV);
+            var formattedMessage = $"{user}: {decryptedMessage}";
+            messages.Add(formattedMessage);
+
+             
+            await InvokeAsync(StateHasChanged);
+
+        });
+
+        hubConnection.On<byte[]>("RequestPublicKey", async (publicKey) =>
+        {
+            otherPublicKey = publicKey; 
+            await InvokeAsync(StateHasChanged);
+        });
+         
+
+        await hubConnection.StartAsync(); 
+        await hubConnection.SendAsync("SendPublicKey", diffieHellmanKeyExchange.PublicKey);
     }
 
-    private void HandleSelection(string userId, string connectionId)
+
+    private async Task SendPrivate()
     {
-        NavManager.NavigateTo($"/privatechat/{userId}/{connectionId}");
+        if (hubConnection is not null)
+        {
+            byte[] secretMessage = diffieHellmanKeyExchange.Encrypt(otherPublicKey, messageInput);
+            byte[] IV = diffieHellmanKeyExchange.IV; 
+             
+            await hubConnection.SendAsync("SendMessagePrivate_ChatHubFunction", selectedConnectionId, selectedUserId, secretMessage, IV);
+            messageInput = string.Empty; 
+        }
+        await InvokeAsync(StateHasChanged);
+
+    }
+    private async Task HandleSelection(string userId, string connectionId)
+    {
+        selectedUserId = userId;
+        selectedConnectionId = connectionId;
+          
+        await hubConnection.InvokeAsync("RequestPublicKey", selectedConnectionId);
+
     }
 
     public bool IsConnected => hubConnection?.State == HubConnectionState.Connected;
