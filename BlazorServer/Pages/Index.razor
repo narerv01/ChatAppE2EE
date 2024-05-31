@@ -29,18 +29,6 @@
 <div class="form-group">
     <h4>You are: @currentUsername</h4>
     <h4>You chat with: @selectedUserId</h4>
-    <br />
-    @if (diffieHellmanKeyExchange.PublicKey != null)
-    {
-        <h4>My public key @Convert.ToBase64String(diffieHellmanKeyExchange.PublicKey)</h4>
-        <h4>My IV @Convert.ToBase64String(diffieHellmanKeyExchange.IV)</h4>
-    }
-    <br />
-    @if (otherPublicKey != null && otherIV != null)
-    {
-        <h4>Other public key: @Convert.ToBase64String(@otherPublicKey)</h4>
-        <h4>Other IV: @Convert.ToBase64String(@otherIV)</h4>
-    }
 </div>
 <br />
 
@@ -65,7 +53,7 @@
 </div>
 <br />
 
-<button class="btn btn-primary" @onclick="SendPrivate" disabled="@(IsConnected == false)">Send</button>
+<button class="btn btn-primary" @onclick="SendPrivate" disabled="@(selectedConnectionId is null)">Send</button>
 
 <br />
 <ul>
